@@ -13,6 +13,7 @@ The rules in short (the README and the task statement have the full ones):
   settings and outputs; no other GPU, no background processes, no tricks with the measurement.
 """
 
+from .nf4_dequant import patch_nf4_dequant
 from .rmsnorm import patch as patch_rmsnorm
 from .swiglu import patch_qwen2_mlp
 from .vocab_loss import patch_vocab_loss
@@ -22,3 +23,4 @@ def apply():
     patch_qwen2_mlp()
     patch_rmsnorm()
     patch_vocab_loss()
+    patch_nf4_dequant()
