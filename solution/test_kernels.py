@@ -35,29 +35,24 @@ def test_swiglu_matches_pytorch(dtype, shape):
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-@pytest.mark.parametrize("shape", [(7, 11, 13), (2, 3, 16, 19)])
-def test_fused_linear_matches_pytorch(dtype, shape):
-    from solution.matmul import fused_linear
+@pytest.mark.parametrize("shape", [(4, 512, 1536), (3, 77, 896)])
+def test_rmsnorm_matches_pytorch(dtype, shape):
+    from solution.rmsnorm import FusedRMSNorm
 
-    torch.manual_seed(1)
-    in_features = shape[-2]
-    out_features = shape[-1]
-    lead_shape = shape[:-2]
-    x = torch.randn(*lead_shape, in_features, device="cuda", dtype=dtype, requires_grad=True)
-    weight = torch.randn(out_features, in_features, device="cuda", dtype=dtype, requires_grad=True)
-    bias = torch.randn(out_features, device="cuda", dtype=dtype, requires_grad=True)
-    grad = torch.randn(*lead_shape, out_features, device="cuda", dtype=dtype)
+    torch.manual_seed(2)
+    x = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=True)
+    weight = torch.randn(shape[-1], device="cuda", dtype=dtype, requires_grad=True)
+    grad = torch.randn(shape, device="cuda", dtype=dtype)
+    eps = 1e-5
 
-    ref = torch.nn.functional.linear(x, weight, bias)
-    ref.backward(grad)
-    ref_x, ref_weight, ref_bias = x.grad.clone(), weight.grad.clone(), bias.grad.clone()
-    x.grad = weight.grad = bias.grad = None
+    ref = x.float() * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + eps) * weight.float()
+    ref.backward(grad.float())
+    ref_x, ref_weight = x.grad.float(), weight.grad.float()
+    x.grad = weight.grad = None
 
-    out = fused_linear(x, weight, bias)
+    out = FusedRMSNorm.apply(x, weight, eps)
     out.backward(grad)
-
     tol = TOLERANCE[dtype]
-    torch.testing.assert_close(out, ref, rtol=tol, atol=tol)
-    torch.testing.assert_close(x.grad, ref_x, rtol=tol, atol=tol)
-    torch.testing.assert_close(weight.grad, ref_weight, rtol=tol, atol=tol)
-    torch.testing.assert_close(bias.grad, ref_bias, rtol=tol, atol=tol)
+    torch.testing.assert_close(out.float(), ref, rtol=tol, atol=tol)
+    torch.testing.assert_close(x.grad.float(), ref_x, rtol=tol, atol=tol)
+    torch.testing.assert_close(weight.grad.float(), ref_weight, rtol=tol, atol=tol)
